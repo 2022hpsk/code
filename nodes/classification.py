@@ -43,13 +43,13 @@ def _parse_classification(response: dict):
     }
 
 def get_classification(query: str, scheme: str, scheme_links: str, config: dict):
-    templates_path = Path(__file__).parent.parent / 'goldensql_template_query2sbu.json'
+    templates_path = Path(__file__).parent.parent / 'goldensql_template_query2sub.json'
     examples_text = ""
     try:
         templates = json.loads(templates_path.read_text(encoding='utf-8'))
-        # 保证顺序 sql1, sql2, sql3
+        # 保证顺序 
         parts = []
-        for k in ('sql1', 'sql2', 'sql3'):
+        for k in ('sql28', 'sql30', 'sql33'):
             if k in templates:
                 parts.append(templates[k])
         examples_text = "\n\n".join(parts)

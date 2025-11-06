@@ -99,9 +99,9 @@ def get_llm_hard_sql(query: str, sub_questions: str, scheme: str, scheme_links: 
     examples_text = ""
     try:
         templates = json.loads(templates_path.read_text(encoding='utf-8'))
-        # 保证顺序 sql1, sql2, sql3
+        # 保证顺序 
         parts = []
-        for k in ('sql1', 'sql2', 'sql3'):
+        for k in ('sql28', 'sql30', 'sql33'):
             if k in templates:
                 parts.append(templates[k])
         examples_text = "\n\n".join(parts)
