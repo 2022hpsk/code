@@ -1,0 +1,18 @@
+{
+    "db": {
+        "host": "127.0.0.1",
+        "user": "root",
+        "database": "tgac",
+        "charset": "utf8mb4",
+        "cursorclass": "pymysql.cursors.DictCursor",
+        "port": 9030,
+        "connect_timeout": 10
+    },
+    "sse": {
+        "app_key": "dSPJGkcHWIEdnFcYENKRqoDhFDAfbrOocoZVdHbJUvdrzBdKqithdkXMdStiaHlvlGHajnWEKJpJeGeTrHSZNGbvEvJHNpEVBTQDqXDUntdHvebbWlfhWdhSELfpyPYH"
+    },
+    "eval": {
+        "dataset_file_path": "/home/idg/repos/tgac/track_3_data_intelligence3/final_for_student/data/golden_sql_items.json",
+        "result_file_path": "dataset_exe_result.json"
+    }
+}
