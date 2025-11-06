@@ -95,7 +95,7 @@ def _parse_llm_hard(response: dict):
     return sql
 
 def get_llm_hard_sql(query: str, sub_questions: str, scheme: str, scheme_links: str, knowledge: str, config: dict):
-    templates_path = Path(__file__).parent / 'goldensql_template_sub2sql.json'
+    templates_path = Path(__file__).parent.parent / 'goldensql_template_sub2sql.json'
     examples_text = ""
     try:
         templates = json.loads(templates_path.read_text(encoding='utf-8'))
