@@ -1,3 +1,4 @@
+from matplotlib.pylab import number
 from utils import call_sse
 import json
 from pathlib import Path
@@ -44,14 +45,16 @@ def _parse_classification(response: dict):
         "flag":flag
     }
 
-def get_classification(query: str, scheme: str, scheme_links: str, config: dict):
+def get_classification(query: str, scheme: str, scheme_links: str, goldensql_ids:list[number],config: dict):
     templates_path = Path(__file__).parent.parent / 'goldensql_template_query2sub.json'
     examples_text = ""
     try:
         templates = json.loads(templates_path.read_text(encoding='utf-8'))
         # 保证顺序 
+        # 根据goldensql_ids[x,y,z]选择对应的模板 sqlx,sqly,sqlz
+        selected_keys = [f'sql{sql_id}' for sql_id in goldensql_ids]
         parts = []
-        for k in ('sql28', 'sql30', 'sql33'):
+        for k in selected_keys:
             if k in templates:
                 parts.append(templates[k])
         examples_text = "\n\n".join(parts)

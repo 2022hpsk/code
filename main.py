@@ -1,4 +1,5 @@
 import time
+from nodes.goldensql_references import get_goldensql_references
 from db import get_scheme
 import json
 from nodes.schema_link import get_schema_link
@@ -22,21 +23,31 @@ def process_sql(data: dict, config: dict):
 
     print(f"schema_links: {schema_links}")
 
+    #get goldensql references:   [xx,xx,xx]
+    goldensql_ids = get_goldensql_references(data.get("question"), config.get("sse"))
+
+
+
     # get classification
-    classification_result = get_classification(data.get("question"), scheme_list, schema_links, config.get("sse"))
+    classification_result = get_classification(data.get("question"), scheme_list, schema_links,goldensql_ids, config.get("sse"))
 
     print(f"classification_result: {classification_result}")
 
-    if classification_result.get("flag") == "NESTED":
-        # get sub questions
-        sub_questions = classification_result.get("sub_questions")
-        # get sub questions sql
-        sql = get_llm_hard_sql(query=data.get("question"), sub_questions=sub_questions, scheme=scheme_list, scheme_links=schema_links, knowledge=data.get("knowledge"), config=config.get("sse"))
-    else:
-        # get sql
-        sql = get_llm_medium_sql(query=data.get("question"), scheme=scheme_list, scheme_links=schema_links, knowledge=data.get("knowledge"), config=config.get("sse"))
+    # if classification_result.get("flag") == "NESTED":
+    #     # get sub questions
+    #     sub_questions = classification_result.get("sub_questions","")
+    #     # get sub questions sql
+    #     sql = get_llm_hard_sql(query=data.get("question"), sub_questions=sub_questions, scheme=scheme_list, scheme_links=schema_links, knowledge=data.get("knowledge"), config=config.get("sse"))
+    # else:
+    #     # get sql
+    #     sql = get_llm_medium_sql(query=data.get("question"), scheme=scheme_list, scheme_links=schema_links, knowledge=data.get("knowledge"), config=config.get("sse"))
+
+    # 统一使用 hard 模式
+    sub_questions = classification_result.get("sub_questions","")
+    sql = get_llm_hard_sql(query=data.get("question"), sub_questions=sub_questions, scheme=scheme_list, scheme_links=schema_links, knowledge=data.get("knowledge"), goldensql_ids=goldensql_ids,config=config.get("sse"))
 
     print(f"sql: {sql}")
+
 
     # execute sql
     sql_executor = execute_sql_with_pymysql()
