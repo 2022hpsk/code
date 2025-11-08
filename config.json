@@ -12,7 +12,7 @@
         "app_key": "dSPJGkcHWIEdnFcYENKRqoDhFDAfbrOocoZVdHbJUvdrzBdKqithdkXMdStiaHlvlGHajnWEKJpJeGeTrHSZNGbvEvJHNpEVBTQDqXDUntdHvebbWlfhWdhSELfpyPYH"
     },
     "eval": {
-        "dataset_file_path": "/home/idg/repos/tgac/track_3_data_intelligence3/final_for_student/data/golden_sql_items.json",
+        "dataset_file_path": "/home/idg/repos/tgac/track_3_data_intelligence3/final_for_student/data/final_dataset2.json",
         "result_file_path": "dataset_exe_result.json"
     }
 }

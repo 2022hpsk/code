@@ -60,7 +60,7 @@ def get_classification(query: str, scheme: str, scheme_links: str, goldensql_ids
         examples_text = "\n\n".join(parts)
     except Exception:
         examples_text = ""
-    print(f"examples_text: {examples_text}")
+    # print(f"examples_text: {examples_text}")
     formatted_prompt = prompt.format(
         query=query,
         scheme=scheme,

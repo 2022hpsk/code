@@ -7,7 +7,8 @@ from nodes.classification import get_classification
 from nodes.llm_medium import get_llm_medium_sql
 from nodes.llm_hard import get_llm_hard_sql
 from utils import execute_sql_with_pymysql
-
+from utils import DecimalEncoder
+import sys
 def process_sql(data: dict, config: dict):
     time_start = time.time()
 
@@ -84,15 +85,27 @@ def test_all_sql_and_save_result(config: dict):
     dataset_file_path = config.get("eval").get("dataset_file_path")
     result_file_path = config.get("eval").get("result_file_path")
     dataset = json.load(open(dataset_file_path, 'r'))
-    result_list = []
+    # 清空/创建结果文件（将采用每行一个 JSON 对象的流式存储）
+    # with open(result_file_path, 'w', encoding='utf-8') as f:
+    #     pass
+
     for data in dataset:
         result = process_sql(data, config)
         print(result)
-        result_list.append(result)
-    json.dump(result_list, open(result_file_path, 'w'), ensure_ascii=False, indent=4)
-    print(f"Saved result to {result_file_path}")
+        # 以追加方式将每个结果写为一行 JSON（ndjson 格式）
+        with open(result_file_path, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(result, ensure_ascii=False, indent = 4, cls = DecimalEncoder) + '\n')
+
+    print(f"Saved results (streamed) to {result_file_path}")
 
 if __name__ == "__main__":
-    config = json.load(open('config.json', 'r'))
-    # test_single_sql(config=config)
-    test_all_sql_and_save_result(config=config)
+    # 打开文件并重定向 stdout
+    with open('log.txt', 'w', buffering=1) as f:  # buffering=1 表示行缓冲
+        sys.stdout = f
+        sys.stderr = f  # 如果也想捕获错误输出
+
+        config = json.load(open('config.json', 'r'))
+        # test_single_sql(config=config)
+        test_all_sql_and_save_result(config=config)
+
+
