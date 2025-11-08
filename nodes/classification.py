@@ -5,7 +5,9 @@ from pathlib import Path
 prompt = f"""
 
 # For the given question, classify it as NESTED.
+Always output sub-questions in the format: sub-questions needed = ["sub-question1", "sub-question2", ...]
 Always output Label: "NESTED".
+
 
 # fields
 {{scheme}}
