@@ -1,69 +1,76 @@
+from operator import le
 import time
-from nodes.goldensql_references import get_goldensql_references
-from db import get_scheme
+from utils.db import get_scheme
 import json
 from nodes.schema_link import get_schema_link
 from nodes.classification import get_classification
 from nodes.llm_medium import get_llm_medium_sql
 from nodes.llm_hard import get_llm_hard_sql
-from utils import execute_sql_with_pymysql
-from utils import DecimalEncoder
+from utils.util import execute_sql_with_pymysql, DecimalEncoder, eval_golden_sql
 import sys
+
 def process_sql(data: dict, config: dict):
     time_start = time.time()
-
     print(f"Starting processing sql {data.get('sql_id')}...")
+
     # get table scheme
     table_list = data.get("table_list")
     scheme_list = get_scheme(table_list, config.get("db"))
 
-    print(f"scheme_list: {scheme_list}")
+    # print(f"scheme_list: {scheme_list}")
 
     # get schema links
-    schema_links = get_schema_link(table_list, scheme_list, data.get("question"), config.get("sse"))
+    schema_links = get_schema_link(table_list, scheme_list, data.get("question"), config.get("sse"), config.get("max_retry_times"))
 
-    print(f"schema_links: {schema_links}")
+    # print(f"schema_links: {schema_links}")
 
-    #get goldensql references:   [xx,xx,xx]
-    goldensql_ids = get_goldensql_references(data.get("question"), config.get("sse"))
-
-
+    if not schema_links:
+        print(f"Get Schema Links failed for sql {data.get('sql_id')}")
+        raise Exception(f"Get Schema Links failed for sql {data.get('sql_id')}")
 
     # get classification
-    classification_result = get_classification(data.get("question"), scheme_list, schema_links,goldensql_ids, config.get("sse"))
+    classification_result = get_classification(data.get("question"), scheme_list, schema_links, config.get("sse"), config.get("max_retry_times"))
 
-    print(f"classification_result: {classification_result}")
+    # print(f"classification_result: {classification_result}")
 
-    # if classification_result.get("flag") == "NESTED":
-    #     # get sub questions
-    #     sub_questions = classification_result.get("sub_questions","")
-    #     # get sub questions sql
-    #     sql = get_llm_hard_sql(query=data.get("question"), sub_questions=sub_questions, scheme=scheme_list, scheme_links=schema_links, knowledge=data.get("knowledge"), config=config.get("sse"))
-    # else:
-    #     # get sql
-    #     sql = get_llm_medium_sql(query=data.get("question"), scheme=scheme_list, scheme_links=schema_links, knowledge=data.get("knowledge"), config=config.get("sse"))
+    if not classification_result or not classification_result.get("sub_questions"):
+        print(f"Get Classification failed for sql {data.get('sql_id')}")
+        raise Exception(f"Get Classification failed for sql {data.get('sql_id')}")
 
-    # 统一使用 hard 模式
-    sub_questions = classification_result.get("sub_questions","")
-    sql = get_llm_hard_sql(query=data.get("question"), sub_questions=sub_questions, scheme=scheme_list, scheme_links=schema_links, knowledge=data.get("knowledge"), goldensql_ids=goldensql_ids,config=config.get("sse"))
+    current_round_sql = None
+    last_round_sql = None
+    last_round_error_message = None
 
-    print(f"sql: {sql}")
+    for i in range(config.get("max_retry_times")):
+        try:
+            current_round_sql = get_llm_hard_sql(query=data.get("question"), sub_questions=classification_result.get("sub_questions"), scheme=scheme_list, scheme_links=schema_links, knowledge=data.get("knowledge"), config=config.get("sse"), last_round_sql=last_round_sql, last_round_error_message=last_round_error_message)
 
+            # execute sql
+            sql_executor = execute_sql_with_pymysql()
+            result = sql_executor.execute_sql_with_pymysql(current_round_sql, config.get("db"))
 
-    # execute sql
-    sql_executor = execute_sql_with_pymysql()
-    result = sql_executor.execute_sql_with_pymysql(sql, config.get("db"))
+            time_end = time.time()
+            print(f"Finished processing sql {data.get('sql_id')} in {time_end - time_start} seconds")
 
-    print(result)
+            return {
+                "sql_id": data.get("sql_id"),
+                "sql": current_round_sql,
+                "status": "success",
+                "result": result
+            }
+        
+        except Exception as e:
+            print(f"Error processing sql {data.get('sql_id')}: {e} in round {i+1}")
+            last_round_sql = current_round_sql
+            last_round_error_message = e
+            time.sleep(1)
 
-    time_end = time.time()
-    print(f"Finished processing sql {data.get('sql_id')} in {time_end - time_start} seconds")
-
+    print(f"Max retry times reached for sql {data.get('sql_id')}")
     return {
         "sql_id": data.get("sql_id"),
-        "sql": sql,
-        "status": "success",
-        "result": result
+        "sql": current_round_sql,
+        "status": "error",
+        "error_message": "Max retry times reached"
     }
 
 def test_single_sql(config: dict):
@@ -85,27 +92,49 @@ def test_all_sql_and_save_result(config: dict):
     dataset_file_path = config.get("eval").get("dataset_file_path")
     result_file_path = config.get("eval").get("result_file_path")
     dataset = json.load(open(dataset_file_path, 'r'))
-    # 清空/创建结果文件（将采用每行一个 JSON 对象的流式存储）
-    # with open(result_file_path, 'w', encoding='utf-8') as f:
-    #     pass
 
+    result_list = []
     for data in dataset:
         result = process_sql(data, config)
-        print(result)
-        # 以追加方式将每个结果写为一行 JSON（ndjson 格式）
-        with open(result_file_path, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(result, ensure_ascii=False, indent = 4, cls = DecimalEncoder) + '\n')
+        result_list.append(result)
 
-    print(f"Saved results (streamed) to {result_file_path}")
+        # save to result_file_path
+        with open(result_file_path, 'w', encoding='utf-8') as f:
+            json.dump(result_list, f, ensure_ascii=False, indent=4, cls = DecimalEncoder)
+
+        break
+
+    print(f"Finished processing {len(result_list)} sql and saved results to {result_file_path}")
+
+def test_golden_sql(config: dict):
+    dataset_file_path = config.get("eval").get("dataset_file_path")
+    result_file_path = config.get("eval").get("result_file_path")
+    dataset = json.load(open(dataset_file_path, 'r'))
+
+    result_list = []
+    for data in dataset:
+        if data.get("golden_sql"):
+            result = process_sql(data, config)
+            print(result)
+            result_list.append(result)
+
+            # save to result_file_path
+            with open(result_file_path, 'w', encoding='utf-8') as f:
+                json.dump(result_list, f, ensure_ascii=False, indent=4, cls = DecimalEncoder)
+
+    # eval result
+    golden_sql_result_file_path = config.get("eval").get("golden_sql_result_file_path")
+    golden_sql_result = json.load(open(golden_sql_result_file_path, 'r'))
+    
+    eval_result = eval_golden_sql(result_list, golden_sql_result)
+
+    print(eval_result)
+
+    print(f"Finished processing {len(result_list)} sql and saved results to {result_file_path}")
+
 
 if __name__ == "__main__":
-    # 打开文件并重定向 stdout
-    with open('log.txt', 'w', buffering=1) as f:  # buffering=1 表示行缓冲
-        sys.stdout = f
-        sys.stderr = f  # 如果也想捕获错误输出
-
-        config = json.load(open('config.json', 'r'))
-        # test_single_sql(config=config)
-        test_all_sql_and_save_result(config=config)
-
-
+    config = json.load(open('config.json', 'r'))
+    # test_single_sql(config=config)
+    # test_all_sql_and_save_result(config=config)
+    test_golden_sql(config=config)

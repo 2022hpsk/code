@@ -12,7 +12,9 @@
         "app_key": "dSPJGkcHWIEdnFcYENKRqoDhFDAfbrOocoZVdHbJUvdrzBdKqithdkXMdStiaHlvlGHajnWEKJpJeGeTrHSZNGbvEvJHNpEVBTQDqXDUntdHvebbWlfhWdhSELfpyPYH"
     },
     "eval": {
-        "dataset_file_path": "/home/idg/repos/tgac/track_3_data_intelligence3/final_for_student/data/final_dataset2.json",
-        "result_file_path": "dataset_exe_result.json"
-    }
+        "dataset_file_path": "/Users/frankie/Workplace/TGAC/data/final_dataset.json",
+        "result_file_path": "results/dataset_exe_result.json",
+        "golden_sql_result_file_path": "/Users/frankie/Workplace/TGAC/code/data/goldensql_groundtruth.json"
+    },
+    "max_retry_times": 3
 }

@@ -9,6 +9,8 @@ from decimal import Decimal
 from datetime import datetime, date
 from pathlib import Path
 from typing import List, Dict, Union
+from collections import Counter
+import math
 
 def call_sse(
     bot_app_key: str,
@@ -212,7 +214,8 @@ class execute_sql_with_pymysql:
         except Exception as e:
             traceback.print_exc()
             print(f"执行SQL语句时发生错误：{e}")
-            return
+            raise Exception(f"Execute SQL with pymysql failed: {e}")
+    
         finally:
             if conn: # 确保数据库连接被关闭
                 conn.close()
@@ -286,3 +289,156 @@ def test_call_sse():
     for i in range(total_times):
         result = call_sse(app_key, system_prompt, user_prompt)
         print(result)
+
+
+def eval_golden_sql(result_list: List[Dict], golden_sql_result: List[Dict]) -> Dict:
+    eval_result = {
+        "precision": 0,
+        "correct_num": 0,
+        "incorrect_num": 0,
+        "total_num": len(result_list)
+    }
+
+    if not result_list:
+        return eval_result
+
+    def _normalize_atomic_value(value):
+        if isinstance(value, bool):
+            return ("bool", value)
+        if isinstance(value, Decimal):
+            normalized = value
+        elif isinstance(value, (int,)):
+            normalized = Decimal(value)
+        elif isinstance(value, float):
+            if math.isnan(value) or math.isinf(value):
+                return ("number", str(value))
+            normalized = Decimal(str(value))
+        elif isinstance(value, (datetime, date)):
+            return ("datetime", value.isoformat())
+        elif value is None:
+            return ("none", None)
+        else:
+            return ("str", str(value))
+
+        normalized = normalized.normalize()
+        return ("number", str(normalized))
+
+    def _normalize_structure(value):
+        if isinstance(value, dict):
+            normalized_items = [_normalize_structure(v) for v in value.values()]
+            normalized_items.sort(key=lambda item: repr(item))
+            return ("dict", len(value), tuple(normalized_items))
+        if isinstance(value, list):
+            normalized_items = [_normalize_structure(v) for v in value]
+            normalized_items.sort(key=lambda item: repr(item))
+            return ("list", len(value), tuple(normalized_items))
+        return _normalize_atomic_value(value)
+
+    def _normalize_row(row):
+        if isinstance(row, dict):
+            normalized_values = [_normalize_structure(v) for v in row.values()]
+            normalized_values.sort(key=lambda item: repr(item))
+            return ("row", len(row), tuple(normalized_values))
+        if isinstance(row, list):
+            normalized_items = [_normalize_structure(v) for v in row]
+            normalized_items.sort(key=lambda item: repr(item))
+            return ("row_list", len(row), tuple(normalized_items))
+        return ("row_value", _normalize_structure(row))
+
+    def _compare_results(actual, golden):
+        if isinstance(golden, list):
+            if not isinstance(actual, list):
+                return False, f"type mismatch: expected list, got {type(actual).__name__}"
+            if len(actual) != len(golden):
+                return False, f"row count mismatch: expected {len(golden)}, got {len(actual)}"
+
+            actual_field_counts = Counter(len(row) if isinstance(row, dict) else None for row in actual)
+            golden_field_counts = Counter(len(row) if isinstance(row, dict) else None for row in golden)
+            if actual_field_counts != golden_field_counts:
+                return False, "field count mismatch between results"
+
+            actual_counter = Counter(_normalize_row(row) for row in actual)
+            golden_counter = Counter(_normalize_row(row) for row in golden)
+            if actual_counter != golden_counter:
+                missing = list((golden_counter - actual_counter).elements())
+                extra = list((actual_counter - golden_counter).elements())
+                details = []
+                if missing:
+                    details.append(f"{len(missing)} expected row(s) missing")
+                if extra:
+                    details.append(f"{len(extra)} unexpected row(s) found")
+                if not details:
+                    details.append("row content mismatch")
+                return False, "; ".join(details)
+            return True, ""
+
+        if isinstance(golden, dict):
+            if not isinstance(actual, dict):
+                return False, f"type mismatch: expected dict, got {type(actual).__name__}"
+            if len(actual) != len(golden):
+                return False, f"field count mismatch: expected {len(golden)}, got {len(actual)}"
+            if _normalize_structure(actual) != _normalize_structure(golden):
+                return False, "value mismatch in dict structure"
+            return True, ""
+
+        if _normalize_structure(actual) == _normalize_structure(golden):
+            return True, ""
+        return False, "value mismatch"
+
+    golden_map = {
+        item.get("sql_id"): item
+        for item in (golden_sql_result or [])
+        if isinstance(item, dict) and item.get("sql_id")
+    }
+
+    mismatch_details = []
+
+    for item in result_list:
+        sql_id = item.get("sql_id")
+        if sql_id is None:
+            eval_result["incorrect_num"] += 1
+            mismatch_details.append({
+                "sql_id": sql_id,
+                "reason": "missing sql_id in result"
+            })
+            continue
+
+        golden_item = golden_map.get(sql_id)
+        if not golden_item:
+            eval_result["incorrect_num"] += 1
+            mismatch_details.append({
+                "sql_id": sql_id,
+                "reason": "missing golden result"
+            })
+            continue
+
+        actual_status = item.get("status")
+        golden_status = golden_item.get("status")
+        if golden_status and actual_status and golden_status != actual_status:
+            eval_result["incorrect_num"] += 1
+            mismatch_details.append({
+                "sql_id": sql_id,
+                "reason": f"status mismatch: expected {golden_status}, got {actual_status}"
+            })
+            continue
+
+        actual_result = item.get("result")
+        golden_result = golden_item.get("result")
+        is_match, reason = _compare_results(actual_result, golden_result)
+
+        if is_match:
+            eval_result["correct_num"] += 1
+        else:
+            eval_result["incorrect_num"] += 1
+            mismatch_details.append({
+                "sql_id": sql_id,
+                "reason": reason or "result mismatch"
+            })
+
+    if eval_result["total_num"]:
+        eval_result["precision"] = eval_result["correct_num"] / eval_result["total_num"]
+
+    if mismatch_details:
+        eval_result["details"] = mismatch_details
+
+    return eval_result

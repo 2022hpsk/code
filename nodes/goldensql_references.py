@@ -1,7 +1,7 @@
 import json
 import re
 from pathlib import Path
-from utils import call_sse
+from utils.util import call_sse
 
 prompt = f"""
 # 任务

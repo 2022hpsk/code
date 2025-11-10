@@ -117,7 +117,6 @@ def _get_gameinfo(db_config, input_sql):
     try:
         # 现在 pymysql.connect 会在内部调用 socket.create_connection，
         # 被我们的猴补拦截并经代理发起 CONNECT。
-        print(f"db_config: {db_config}")
         with pymysql.connect(**db_config) as connection:
             with connection.cursor() as cursor:
                 sql_query = input_sql
@@ -142,12 +141,3 @@ def get_scheme(table_list, db_config: dict) -> str:
         results = _get_gameinfo(db_config=db_config, input_sql=input_sql)
         scheme_list.append(results)
     return f'{scheme_list}'
-
-if __name__ == "__main__":
-    test_data = {         
-            "table_list": [
-                "dws_mgamejp_login_user_activity_di",
-                "dim_vplayerid_vies_df"
-        ]
-    }
-    get_scheme(test_data)

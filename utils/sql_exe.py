@@ -104,6 +104,7 @@ class execute_sql_with_pymysql:
                             "error_message": str(e)
                         })
                 else:
+                    continue
                     # 如果item缺少sql字段，记录格式错误
                     results.append({
                         "sql": None,
@@ -279,11 +280,11 @@ if __name__ == '__main__':
     }
 
     # 执行插入操作
-    insert_file_path = "/mnt/tgac/data/insert_sql.json"
-    insert_result_file_path = "/mnt/tgac/result/insert_exe_result.json"
-    sql_executor.insert_data_with_pymysql(insert_file_path, insert_result_file_path, db_configuration)
+    # insert_file_path = "/mnt/tgac/data/insert_sql.json"
+    # insert_result_file_path = "/mnt/tgac/result/insert_exe_result.json"
+    # sql_executor.insert_data_with_pymysql(insert_file_path, insert_result_file_path, db_configuration)
     
     # 执行查询操作
-    dataset_file_path = "/mnt/tgac/data/final_dataset.json"
-    dataset_result_file_path = "/mnt/tgac/result/dataset_exe_result.json"
+    dataset_file_path = "/Users/frankie/Workplace/TGAC/data/final_dataset.json"
+    dataset_result_file_path = "/Users/frankie/Workplace/TGAC/code/results/example_dataset_exe_result.json"
     sql_executor.execute_sql_with_pymysql(dataset_file_path, dataset_result_file_path, db_config = db_configuration)
