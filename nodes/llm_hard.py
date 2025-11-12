@@ -1,76 +1,58 @@
 import time
+import traceback
 from utils.util import call_sse
-
-external_knowledge = """
-数据表注意事项：
-Many tables such as `dws_jordass_playermatchrecord_stat_df` are not detail records but rather ‘daily snapshot/daily summary tables’.
-They record a cumulative player snapshot daily.
-For `df` snapshot tables, `old` players can only be specified using `=` to denote the ‘snapshot boundary date
-
-游戏常识说明：
-- 砺刃使者、勇者盟约、峡谷行动 为游戏名，均为FPS游戏。乐园是砺刃使者下的UGC玩法模式，包含很多子玩法。
-- 手游大盘、平台大盘代表所有游戏集合。
-- 如果提到某游戏大盘，是指该游戏本身所有活跃用户，而不是全游戏。比如"砺刃大盘活跃"是指砺刃使者游戏的活跃。
-- 一个玩家id可能对应多个角色id。
-- 游戏玩家行为明细日志，通常会被叫成“流水”，通常表名的格式为：`dwd_gamecode_行为标识别_hi`。游戏玩家付费充值金额也会被叫成“流水”
-- 如果"用户问题"只提到'活跃'，没有明确说具体玩法模式的活跃，默认为游戏活跃，而不是游戏内具体某个玩法模式的活跃。
-
-常用指标说明：
-- DAU：日活跃用户数
-- 留存：以次留为例，表示当天活跃第二天依然活跃的用户定义为次留，其他留存以此类推
-- 新进：注册
-
-数仓设计规范：
-分层规范：
-- DWD层用于存储玩家行为明细数据，每一条行为事件包含一条记录
-- DWS层用于存储玩家粒度或者进一步聚合粒度的数据
-- DIM代表维度配表
-
-命名规范：
-以`dws_jordass_mode_roundrecord_di` 为例：
-  - `dws` 前缀代表分层
-  - `jordass` 代表gamecode
-  - `mode_roundrecord` 代表表业务含义
-  - `di` 后缀中，`d` 代表按天分区，`i` 代表每天存储增量数据。如果后缀是`df`，代表每天存储游戏开服至今的全量数据，使用时取时间周期最后一天即可
-
-字段规范：
-- cbitmap：100位0和1组成的字符串，左侧第一位代表当天。1表示有对应行为，比如活跃或付费，0 表示未发生对应行为，比如未活跃或未付费。常常使用该字段统计流失、回流、留存等指标
-"""
 
 prompt = f"""
 # Task
+你是一个SQL专家，你要根据问题生成对应的MySQL查询语句。
+我会给你提供这个问题相关的表的scheme、scheme_links和sub-questions，你需要根据全部信息生成最终语法正确的、最合理的MySQL语句。
 
-You are a SQL expert.
-Use all the following information to generate the SQL query for the question.
+# Common knowledge
+这是一些背景信息
+{{common_knowledge}}
 
-# All_fields
+# Question knowledge
+这是一些与当前问题相关的信息
+{{question_knowledge}}
 
-{{scheme}}
+# Example
+Question: 统计2019.5.8至2025.3.30 分月的玩法主玩情况\n输出：月份(201905、201906、...、202503)、主玩玩法、主玩人数、总参与人数"
 
-# External_knowledge
+Table scheme: 
 
-{external_knowledge}
+Schema links: [dws_jordass_mode_roundrecord_di.dtstatdate, 
+dws_jordass_mode_roundrecord_di.vplayerid, 
+dws_jordass_mode_roundrecord_di.mode, 
+dws_jordass_mode_roundrecord_di.modename, 
+dws_jordass_mode_roundrecord_di.submode, 
+dws_jordass_mode_roundrecord_di.submodename, 
+dws_jordass_mode_roundrecord_di.mapname, 
+dws_jordass_mode_roundrecord_di.roundtime,
+dwd_jordass_playerexitgamerecord_hi.dteventtime,
+dwd_jordass_playerexitgamerecord_hi.vplayerid,
+dwd_jordass_playerexitgamerecord_hi.mode,
+dwd_jordass_playerexitgamerecord_hi.roundtime,
+"2019-05-08",
+"2025-03-30"]
 
-当前问题所需知识：
-{{knowledge}}
+Answer: Let's think step by step. "统计2019.5.8至2025.3.30 分月的玩法主玩情况\n输出：月份(201905、201906、...、202503)、主玩玩法、主玩人数、总参与人数" can be solved by knowing the answer to the following sub-questions ['How to determine the main play mode for each player in each month?', 'How to calculate the total participation count for each month?', 'How to handle the special case of tunnel mode players (mode in (3001, 3002, 3003)) during 2024.6.18-2025.3.30?', 'How to apply the play mode classification rules to determine the final mode name?', 'How to aggregate the results by month and main play mode?'] To solve this question, we first aggregate data by month using substr(dtstatdate,1,6) for DWS data and substr(tdbank_imp_date,1,6) for DWD data. Then we classify each play mode according to the given mapping rules: if the mode is “traditional” and submode starts with “CG” and map is “群屿”, we label it as “主题群屿”; if the mode is “traditional” and map is “群屿”, “假日群岛”, or “荣耀之城”, we label it accordingly as “传统群屿”, “假日群岛”, or “荣耀之城”; if the submode is “广域战场模式” or “极能形态模式”, we map them to “广域战场” and “极能形态”; if the mode is “组队竞技”, “乐园”, “领地”, or “广阔天地”, we map them directly to “组竞”, “乐园”, “领地”, and “广阔天地”; all others become “其他模式”. Next, we build a detailed record of player participation: from dws_jordass_mode_roundrecord_di we sum the total round time and round count for each player, month, and mapped mode between 2019-05-08 and 2025-03-30; from dwd_jordass_playerexitgamerecord_hi we add tunnel mode data (mode in 3001, 3002, 3003) for the range 2024-06-18 to 2025-03-30, labeling the mode as “隧道”. We union these two datasets into one called main_user. Then we determine each player’s main mode per month by ranking modes by total round time (descending) and selecting the top one. The number of main players per mode per month is counted from these top records, while total participants per mode per month are counted from all records. Finally, we join the two results on month and mode, and output month, main mode name, main player count, and total participant count sorted by month and mode. So the final SQL is: ```sql
+with main_user as (\n    select substr(dtstatdate, 1, 6) mons,\n        case\n            when modename = '传统模式' and submodename like 'CG%' and mapname = '群屿' then '主题群屿'\n            when modename = '传统模式' and mapname = '群屿' then '传统群屿'\n            when modename = '传统模式' and mapname = '假日群岛' then '假日群岛'\n            when modename = '传统模式' and mapname = '荣耀之城' then '荣耀之城'\n            when submodename = '广域战场模式' then '广域战场'\n            when submodename = '极能形态模式' then '极能形态'\n            when modename = '组队竞技' then '组竞'\n            when modename = '乐园' then '乐园'\n            when modename = '领地' then '领地'\n            when modename = '广阔天地' then '广阔天地'\n            else '其他模式'\n        end imodename,\n        vplayerid,\n        sum(roundtime) / 60 roundtime,\n        sum(roundcnt) roundcnt\n   from dws_jordass_mode_roundrecord_di\n   where dtstatdate between '20190508' and '20250330'\n   group by vplayerid, substr(dtstatdate, 1, 6),\n        case\n            when modename = '传统模式' and submodename like 'CG%' and mapname = '群屿' then '主题群屿'\n            when modename = '传统模式' and mapname = '群屿' then '传统群屿'\n            when modename = '传统模式' and mapname = '假日群岛' then '假日群岛'\n            when modename = '传统模式' and mapname = '荣耀之城' then '荣耀之城'\n            when submodename = '广域战场模式' then '广域战场'\n            when submodename = '极能形态模式' then '极能形态'\n            when modename = '组队竞技' then '组竞'\n            when modename = '乐园' then '乐园'\n            when modename = '领地' then '领地'\n            when modename = '广阔天地' then '广阔天地'\n            else '其他模式'\n        end\n\n   union all\n   \n   select substr (tdbank_imp_date, 1, 6) mons,\n        '隧道' as modename,\n        vplayerid,\n        sum(roundtime) / 60 roundtime,\n        count(distinct gameid) roundcnt\n   from dwd_jordass_playerexitgamerecord_hi\n   where tdbank_imp_date between '2024061800' and '2025033023'\n     and mode in (3001, 3002, 3003)\n   group by substr (tdbank_imp_date, 1, 6), vplayerid\n)\n\nselect a.mons,\n       a.imodename,\n       a.iusernum,\n       b.iusernumall\nfrom (\n    select mons,\n          imodename,\n          count(vplayerid) iusernum\n    from (\n        select mons, vplayerid, imodename\n        from (\n            select mons,\n                vplayerid,\n                imodename,\n                roundtime,\n                row_number() over (partition by mons, vplayerid order by roundtime desc) as rn\n            from main_user\n        )ff1\n        where rn = 1\n    )f1\n   group by mons, imodename\n) a\nleft join (\n    select mons,\n        imodename,\n        count(vplayerid) iusernumall\n   from main_user\n   group by mons, imodename\n) b \non a.imodename = b.imodename and a.mons = b.mons\norder by a.mons, a.imodename\n;
+```
 
-# Output
+# Input
+这是你当前需要处理的数据，请输出完整的Answer，必须按照格式输出最终SQL。
 
-Question: {{query}}
+Question: {{question}}
+
+Table scheme: {{scheme}}
 
 Schema_links: {{scheme_links}}
 
-Last_round_sql: {{last_round_sql}}
-
-Last_round_error_message: {{last_round_error_message}}
-
-Answer: Let's think step by step. "{{query}}" can be solved by knowing the answer to the following sub-questions "{{sub_questions}}"
-...
-SQL: ```sql
+Answer: Let's think step by step. "{{question}}" can be solved by knowing the answer to the following sub-questions {{sub_questions}} ...
+So the final SQL query is:
+```sql
 ...
 ```
-
-请你思考之后输出完整的Answer，其中必须包含最终的SQL，以示例格式输出。如果上一轮的SQL不为空，请基于上一轮的SQL和报错信息重新思考和调整。
 """
 
 def _parse_llm_hard(response: dict):
@@ -78,19 +60,26 @@ def _parse_llm_hard(response: dict):
     sql = content.split('```sql')[1].split('```')[0]
     return sql
 
-def get_llm_hard_sql(query: str, sub_questions: str, scheme: str, scheme_links: str, knowledge: str, config: dict, last_round_sql: str, last_round_error_message: str):
+def get_llm_hard_sql(sub_questions: str, scheme: str, scheme_links: str, data: dict, config: dict):
     try:
         formatted_prompt = prompt.format(
-            query=query,
+            common_knowledge=config["common_knowledge"],
+            question_knowledge=data["knowledge"],
+            question=data["question"],
             sub_questions=sub_questions,
             scheme=scheme,
-            scheme_links=scheme_links,
-            knowledge=knowledge,
-            last_round_sql=last_round_sql,
-            last_round_error_message=last_round_error_message,
+            scheme_links=scheme_links
         )
-        response = call_sse(config['app_key'], '', formatted_prompt)
+
+        # print(formatted_prompt)
+
+        response = call_sse(config['sse']['app_key'], '', formatted_prompt)
+
+        # print(response)
+
         sql = _parse_llm_hard(response)
+
         return sql
+
     except Exception as e:
-        raise Exception(f"Get LLM Hard SQL failed for sql {query}")
+        raise Exception(f"Get LLM Hard SQL failed for current sql")

@@ -14,7 +14,7 @@
     "eval": {
         "dataset_file_path": "/Users/frankie/Workplace/TGAC/data/final_dataset.json",
         "result_file_path": "results/dataset_exe_result.json",
-        "golden_sql_result_file_path": "/Users/frankie/Workplace/TGAC/code/data/goldensql_groundtruth.json"
+        "golden_sql_result_file_path": "/Users/frankie/Workplace/TGAC/data/goldensql_groundtruth.json"
     },
     "max_retry_times": 3
 }

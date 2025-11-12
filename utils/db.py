@@ -132,12 +132,12 @@ def _get_gameinfo(db_config, input_sql):
         traceback.print_exc()
         return f"error: {str(e)}", None
 
-def get_scheme(table_list, db_config: dict) -> str:
-    db_config["cursorclass"] = pymysql.cursors.DictCursor
+def get_scheme(table_list, config: dict) -> str:
+    config["db"]["cursorclass"] = pymysql.cursors.DictCursor
     scheme_list = []
     for table in table_list:
         # input_sql = f'describe {table};'
         input_sql = f'show create table {table};'
-        results = _get_gameinfo(db_config=db_config, input_sql=input_sql)
+        results = _get_gameinfo(db_config=config["db"], input_sql=input_sql)
         scheme_list.append(results)
     return f'{scheme_list}'
